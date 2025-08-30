@@ -1,22 +1,18 @@
 import os
 from flask import Flask, request, render_template_string
-import os
 from openai import OpenAI
 import PyPDF2
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Your HTML template and routes remain the same...
-
-
-# Chat history
+# Chat history (per session)
 chat_history = []
 
 # Max file size: 2 MB
 MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB
 
-# HTML template
+# HTML template with optional side history
 html_form = """
 <!DOCTYPE html>
 <html lang="en">
@@ -24,9 +20,20 @@ html_form = """
     <meta charset="UTF-8">
     <title>AI Back-to-School Helper</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #history-panel { display: none; }
+    </style>
+    <script>
+        function toggleHistory() {
+            const panel = document.getElementById('history-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+    </script>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-start justify-center py-10">
-<div class="bg-white shadow-xl rounded-2xl p-8 w-full max-w-4xl space-y-8">
+<div class="bg-white shadow-xl rounded-2xl p-8 w-full max-w-5xl space-y-8 flex flex-col lg:flex-row gap-6">
+
+<div class="flex-1 space-y-6">
 
 <h1 class="text-3xl font-bold text-center text-indigo-600 mb-6">🎓 AI Back-to-School Helper</h1>
 
@@ -83,21 +90,37 @@ html_form = """
 </div>
 
 <!-- AI Responses -->
-{% if chat %}
-<div class="mt-6 space-y-4">
-    <h2 class="text-2xl font-semibold text-gray-700">💡 AI Responses</h2>
-    {% for entry in chat %}
+<div class="mt-6">
+    <h2 class="text-2xl font-semibold text-gray-700">💡 AI Response</h2>
+    {% if chat %}
         <div class="bg-gray-50 p-4 rounded-lg border">
-            <p class="font-semibold text-gray-700">Feature:</p>
-            <p class="text-gray-800">{{ entry['feature'] }}</p>
-            <p class="font-semibold text-gray-700 mt-2">Your Input:</p>
-            <p class="text-gray-800">{{ entry['question'] }}</p>
+            <p class="font-semibold text-gray-700">Feature: {{ chat[-1]['feature'] }}</p>
+            <p class="text-gray-800 mt-1">Your Input: {{ chat[-1]['question'] }}</p>
             <p class="font-semibold text-indigo-600 mt-2">AI Response:</p>
-            <p class="text-gray-900">{{ entry['answer'] }}</p>
+            <p class="text-gray-900">{{ chat[-1]['answer'] }}</p>
         </div>
-    {% endfor %}
+    {% else %}
+        <p class="text-gray-600 mt-2">No responses yet.</p>
+    {% endif %}
 </div>
-{% endif %}
+
+</div>
+
+<!-- Optional History Panel -->
+<div class="flex-none w-full lg:w-1/3">
+    <button onclick="toggleHistory()" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 transition mb-3">
+        Toggle Your History
+    </button>
+    <div id="history-panel" class="space-y-4 overflow-y-auto max-h-screen">
+        {% for entry in chat %}
+            <div class="bg-gray-100 p-3 rounded border">
+                <p class="font-semibold">{{ entry['feature'] }}</p>
+                <p class="text-gray-800">{{ entry['question'] }}</p>
+                <p class="text-gray-900">{{ entry['answer'] }}</p>
+            </div>
+        {% endfor %}
+    </div>
+</div>
 
 </div>
 </body>
@@ -114,7 +137,7 @@ def study_plan():
     subject = request.form.get("subject")
     hours = request.form.get("hours")
     exam_date = request.form.get("exam_date")
-    prompt = f"Create a personalized study plan for {subject}. The student can study {hours} hours per day until {exam_date}. Provide a daily plan."
+    prompt = f"Create a personalized study plan for {subject}. Reply in clear, plain text, friendly, and easy-to-read format. No stars, hashtags, or markdown. The student can study {hours} hours per day until {exam_date}."
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -127,7 +150,8 @@ def study_plan():
 @app.route("/todo", methods=["POST"])
 def todo():
     tasks = request.form.get("tasks")
-    prompt = f"Organize these tasks into a prioritized to-do list: {tasks}"
+    prompt = f"Organize these tasks into a simple to-do list. Reply in plain text only, clear and readable. Do not use *, #, bullets, or markdown: {tasks}"
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
@@ -144,7 +168,7 @@ def summarize():
     file = request.files["note_file"]
 
     # File size validation
-    file.seek(0, 2)  # go to end of file
+    file.seek(0, 2)
     size = file.tell()
     file.seek(0)
     if size > MAX_FILE_SIZE:
@@ -163,7 +187,7 @@ def summarize():
         chat_history.append({"feature": "Text Summarizer", "question": f"{file.filename}", "answer": "Error: Unsupported file type."})
         return render_template_string(html_form, chat=chat_history)
 
-    prompt = f"Summarize the following text for easy studying:\n{text}"
+    prompt = f"Summarize the following text in plain, friendly, and readable format. No *, #, bullets, or markdown:\n{text}"
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -176,7 +200,8 @@ def summarize():
 @app.route("/homework", methods=["POST"])
 def homework():
     question = request.form.get("question")
-    prompt = f"Provide step-by-step help for this homework question: {question}"
+    prompt = f"Provide a clear, step-by-step answer in plain text. Friendly and readable. Do NOT use *, #, bullets, or markdown: {question}"
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
@@ -187,6 +212,4 @@ def homework():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-
-    
+    app.run(host="0.0.0.0", port=port, debug=True)
