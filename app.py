@@ -1,5 +1,6 @@
 import os
 from flask import Flask, request, render_template_string
+import os
 from openai import OpenAI
 import PyPDF2
 
@@ -7,10 +8,6 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # Your HTML template and routes remain the same...
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
 
 
 # Chat history
@@ -188,5 +185,8 @@ def homework():
     chat_history.append({"feature": "Homework Help", "question": question, "answer": answer})
     return render_template_string(html_form, chat=chat_history)
 
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
     
